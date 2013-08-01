@@ -25,10 +25,10 @@ var fs = require('fs');
 var program = require('commander');
 var cheerio = require('cheerio');
 var rest = require('restler');
+var sys = require('util');
 var HTMLFILE_DEFAULT = "index.html";
 var CHECKSFILE_DEFAULT = "checks.json";
-var TEMP_URL_HTMLFILE_DEFAULT = "temp_file.html"
-
+var URL_HTMLFILE_DEFAULT = "https://fierce-savannah-1109herokuapp.com";
 var assertFileExists = function(infile) {
     var instr = infile.toString();
     if(!fs.existsSync(instr)) {
@@ -36,20 +36,13 @@ var assertFileExists = function(infile) {
         process.exit(1); // http://nodejs.org/api/process.html#process_process_exit_code
     }
     return instr;
+}; // only use this outside the restler commands (sync mode)
+var assertUrlExists = function(val) {
+	return val.toString();
+}
+var cheerioHtmlFile = function(htmlfile) {
+	return cheerio.load(fs.readFileSync(htmlfile));
 };
-
-var buildfn = function() {
-    var saveURLToFile = function(result, response) {
-        if (result instanceof Error) {
-            console.error('Error: ' + util.format(response.message));
-        } else {
-//            console.error("Wrote %s", TEMP_URL_HTMLFILE_DEFAULT);
-            fs.writeFileSync(TEMP_URL_HTMLFILE_DEFAULT, result);
-        }
-    };
-    return saveURLToFile;
-};
-
 
 var cheerioHtmlFile = function(htmlfile) {
     return cheerio.load(fs.readFileSync(htmlfile));
@@ -70,6 +63,17 @@ var checkHtmlFile = function(htmlfile, checksfile) {
     return out;
 };
 
+var checkUrl = function(webUrl, checksfile) {
+    $ = cheerio.load(webUrl);
+    var checks = loadChecks(checksfile).sort();
+    var out = {};
+    for(var ii in checks) {
+        var present = $(checks[ii]).length > 0;
+        out[checks[ii]] = present;
+    }
+    return out;
+};
+
 var clone = function(fn) {
     // Workaround for commander.js issue.
     // http://stackoverflow.com/a/6772648
@@ -80,21 +84,19 @@ if(require.main == module) {
     program
         .option('-c, --checks <check_file>', 'Path to checks.json', clone(assertFileExists), CHECKSFILE_DEFAULT)
         .option('-f, --file <html_file>', 'Path to index.html', clone(assertFileExists), HTMLFILE_DEFAULT)
-		.option('-u, --url <html_file_url>', 'URL to index.html')
-        .parse(process.argv);
-    var checkJson;
-	if(program.url){
-		var saveURLToFile = buildfn();
-		rest.get(program.url).on('complete', saveURLToFile);
-		checkJson = checkHtmlFile(TEMP_URL_HTMLFILE_DEFAULT, program.checks);
-	}
-	else{
-		checkJson = checkHtmlFile(program.file, program.checks);
-	}
-
-    var outJson = JSON.stringify(checkJson, null, 4);
-    console.log(outJson);
+        .option('-u, --url <url>', 'Path to url')//, clone(assertUrlExists), URL_DEFAULT)
+        .parse(process.argv);  
+    if (program.url) {
+	rest.get(program.url).on('complete', function(result) {
+	    var checkJson = checkUrl(result, program.checks);
+	    var outJson = JSON.stringify(checkJson, null, 4);
+	    console.log(outJson);
+	    });
+    } else {
+	var checkJson = checkHtmlFile(program.file, program.checks);
+	var outJson = JSON.stringify(checkJson, null, 4);
+	console.log(outJson);
+    }
 } else {
     exports.checkHtmlFile = checkHtmlFile;
 }
-/* Shubhanshu Mishra 20130710 */
